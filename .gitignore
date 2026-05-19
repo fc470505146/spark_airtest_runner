@@ -1,5 +1,6 @@
 .venv/
 .venv-airtest/
+.vscode/
 __pycache__/
 *.pyc
 

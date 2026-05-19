@@ -103,6 +103,16 @@ runs/<时间戳>/
 
 优先打开 `runs/<时间戳>/index.html` 看整体结果。总览表里同一实例的多条用例会合并显示，方便观察实例维度的执行情况。
 
+### 报告示例
+
+总览报告：
+
+![总览报告](docs/assets/index汇总.png)
+
+Airtest 单用例报告：
+
+![Airtest 单用例报告](docs/assets/airtest_report.png)
+
 ## 目录
 
 ```text
