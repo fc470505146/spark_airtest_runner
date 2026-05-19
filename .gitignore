@@ -12,3 +12,6 @@ runs/
 logs/
 reports/
 **/__pycache__/
+
+# Local raw media sources
+/自动跑测预览.gif

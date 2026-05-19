@@ -2,6 +2,8 @@
 
 面向 Spark Unity Android 包的 Airtest/Poco 自动化测试执行器。
 
+![自动跑测预览](docs/assets/自动跑测预览.gif)
+
 它负责把端到端测试环境拉起来：
 
 ```text
