@@ -29,7 +29,7 @@
 
 - Python 3.11 或兼容版本。
 - 雷电模拟器，并确认 `ldconsole.exe` 路径可用。
-- 已接入 Poco SDK 的 Spark Android APK。
+- 已接入 Poco SDK 的 Android APK。
 - APK 包名，例如 `com.fc470.spark`。
 
 创建虚拟环境并安装依赖：
