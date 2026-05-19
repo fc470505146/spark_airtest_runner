@@ -1,0 +1,17 @@
+ldconsole: C:\leidian\LDPlayer9\ldconsole.exe
+apk: C:\Users\fc470\projects\spark_builds\android\spark-poco-test.apk
+package: com.fc470.spark
+concurrency: 1
+restart_app_per_case: true
+
+instances:
+  - name: spark_airtest_720x1280
+    resolution: 720,1280,320
+    cpu: 2
+    memory: 2048
+
+cases:
+  - cases\spark\smoke_game_ui.air
+  - cases\spark\pause_menu.air
+  - cases\spark\touch_mode.air
+  - cases\spark\hud_visibility.air

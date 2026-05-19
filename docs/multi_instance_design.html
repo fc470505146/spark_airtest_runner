@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spark Airtest Runner 多实例并发设计稿</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fa;
+      --panel: #ffffff;
+      --text: #1f2937;
+      --muted: #5f6b7a;
+      --line: #d8dee8;
+      --accent: #2563eb;
+      --accent-soft: #eaf1ff;
+      --code-bg: #111827;
+      --code-text: #e5e7eb;
+      --warn-bg: #fff7ed;
+      --warn-line: #fdba74;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+      line-height: 1.72;
+    }
+
+    main {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 40px 24px 72px;
+    }
+
+    header {
+      margin-bottom: 28px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 32px;
+      line-height: 1.25;
+    }
+
+    h2 {
+      margin: 34px 0 12px;
+      font-size: 22px;
+      border-left: 5px solid var(--accent);
+      padding-left: 12px;
+    }
+
+    h3 {
+      margin: 24px 0 8px;
+      font-size: 18px;
+    }
+
+    p {
+      margin: 10px 0;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px 20px;
+      margin: 16px 0;
+    }
+
+    .note {
+      background: var(--accent-soft);
+      border-left: 4px solid var(--accent);
+      padding: 12px 14px;
+      border-radius: 6px;
+      margin: 14px 0;
+    }
+
+    .warning {
+      background: var(--warn-bg);
+      border-left: 4px solid var(--warn-line);
+      padding: 12px 14px;
+      border-radius: 6px;
+      margin: 14px 0;
+    }
+
+    ul, ol {
+      padding-left: 24px;
+    }
+
+    li {
+      margin: 6px 0;
+    }
+
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      background: #eef2f7;
+      padding: 2px 5px;
+      border-radius: 4px;
+    }
+
+    pre {
+      background: var(--code-bg);
+      color: var(--code-text);
+      padding: 16px;
+      border-radius: 8px;
+      overflow: auto;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+      margin: 14px 0 20px;
+      border: 1px solid var(--line);
+    }
+
+    th, td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #eef2f7;
+      font-weight: 700;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin: 16px 0;
+    }
+
+    .step {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      min-height: 86px;
+    }
+
+    .step strong {
+      display: block;
+      color: var(--accent);
+      margin-bottom: 4px;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Spark Airtest Runner 多实例并发设计稿</h1>
+    <div class="meta">适用项目：<code>spark_airtest_runner</code>；目标：支持雷电模拟器设备矩阵、并发调度、顺序执行用例和报告汇总。</div>
+  </header>
+
+  <section class="panel">
+    <h2>设计目标</h2>
+    <p>当前 runner 只支持一个雷电实例。下一阶段希望升级成配置驱动的设备矩阵执行器，用于验证 Spark Android APK 在不同分辨率、DPI 和模拟器实例上的 UI 适配表现。</p>
+    <ul>
+      <li>支持配置多个雷电实例。</li>
+      <li>支持设置 <code>concurrency</code>，控制一次最多并发几个实例。</li>
+      <li>同一个实例内按顺序执行多个 Airtest 用例，避免用例互相抢屏幕和 ADB。</li>
+      <li>每个实例生成独立日志和 HTML 报告。</li>
+      <li>最终生成 <code>summary.json</code> 和可读的总览报告。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>核心原则</h2>
+    <div class="note">
+      并发单位是“雷电实例”，不是“Airtest 用例”。同一个模拟器同时只能有一个前台 App，也只有一套 ADB、Poco 和输入流，因此同一实例内必须顺序执行。
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>原则</th>
+          <th>说明</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>实例级并发</td>
+          <td>多个雷电实例可以并发跑；同一实例内的用例顺序跑。</td>
+        </tr>
+        <tr>
+          <td>配置驱动</td>
+          <td>雷电路径、APK 路径、包名、设备矩阵、用例列表都来自 YAML 配置。</td>
+        </tr>
+        <tr>
+          <td>安装一次</td>
+          <td>每个实例在一轮测试开始时安装一次 APK；同一实例内多个 case 复用同一 APK。</td>
+        </tr>
+        <tr>
+          <td>明确启动</td>
+          <td>安装完成后使用 <code>adb install -r</code> 等待 <code>Success</code>，再用 <code>am start -n</code> 启动明确 Activity。</td>
+        </tr>
+        <tr>
+          <td>用例状态隔离</td>
+          <td>同一实例内 case 顺序执行，但每个 case 执行前默认重启 App，避免上一个 case 的 UI 状态、存档状态或失败现场污染后续 case。</td>
+        </tr>
+        <tr>
+          <td>失败分层处理</td>
+          <td>环境阶段失败时中止该实例；单个 case 失败时记录失败并继续执行该实例上的后续 case。</td>
+        </tr>
+        <tr>
+          <td>结果结构化</td>
+          <td>每个 case 都产出结构化结果对象，总览报告和 <code>summary.json</code> 只依赖结构化结果，不依赖控制台输出。</td>
+        </tr>
+        <tr>
+          <td>失败可诊断</td>
+          <td>失败时记录实例名、case 名、阶段、错误消息和报告路径。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>推荐配置格式</h2>
+    <p>多实例版本必须使用 <code>instances</code>，不再保留旧版 <code>instance</code> 配置入口。</p>
+    <pre><code>ldconsole: C:\leidian\LDPlayer9\ldconsole.exe
+apk: C:\Users\fc470\projects\spark_builds\android\spark-poco-test.apk
+package: com.fc470.spark
+concurrency: 2
+restart_app_per_case: true
+
+instances:
+  - name: spark_720x1280
+    resolution: 720,1280,320
+    cpu: 2
+    memory: 2048
+  - name: spark_1080x1920
+    resolution: 1080,1920,420
+    cpu: 2
+    memory: 2048
+  - name: spark_1080x2400
+    resolution: 1080,2400,440
+    cpu: 2
+    memory: 2048
+
+cases:
+  - cases\spark\smoke_game_ui.air
+  - cases\spark\pause_menu.air
+  - cases\spark\touch_mode.air</code></pre>
+
+    <div class="warning">
+      默认建议 <code>concurrency: 1</code>。等串行矩阵稳定后，再提升到 <code>2</code>。雷电多开会消耗 CPU、内存、GPU 和磁盘 IO，稳定性优先。
+    </div>
+
+    <h3>配置校验</h3>
+    <p>多实例版本不保留旧版 <code>instance</code> 兼容逻辑，配置必须显式提供 <code>instances</code>。这样可以避免新旧配置长期并存造成语义漂移，也让执行入口只有一个事实来源。</p>
+    <p>配置解析阶段应尽早 fast-fail，避免执行到中途才暴露环境错误。以下条件应直接报错并中止：</p>
+    <ul>
+      <li><code>ldconsole</code> 缺失或文件不存在。</li>
+      <li><code>apk</code> 缺失或文件不存在。</li>
+      <li><code>package</code> 缺失。</li>
+      <li><code>instances</code> 缺失或为空。</li>
+      <li><code>cases</code> 为空。</li>
+      <li><code>concurrency</code> 小于 <code>1</code>。</li>
+      <li>任意 case 路径不存在。</li>
+    </ul>
+    <p><code>package</code> 作为配置项维护，用于安装后确认目标 App、停止 App 和查询启动入口。启动 <code>activity</code> 不作为配置项维护，runner 在 APK 安装后通过 ADB 查询设备 PackageManager 获得。</p>
+  </section>
+
+  <section>
+    <h2>执行模型</h2>
+    <p>每个实例由一个 worker 负责。worker 内部顺序执行所有 case；多个 worker 由线程池按 <code>concurrency</code> 控制并发数量。</p>
+
+    <div class="flow">
+      <div class="step"><strong>1. 读取配置</strong>解析 <code>instances</code>、<code>cases</code>、<code>concurrency</code>。</div>
+      <div class="step"><strong>2. 创建线程池</strong><code>max_workers = concurrency</code>。</div>
+      <div class="step"><strong>3. 提交实例任务</strong>每个实例提交一个 <code>run_instance_suite</code>。</div>
+      <div class="step"><strong>4. 实例内顺序执行</strong>安装 APK 后按顺序跑所有 case。</div>
+      <div class="step"><strong>5. 收集结果</strong>记录通过、失败、报告路径和错误信息。</div>
+      <div class="step"><strong>6. 输出汇总</strong>生成 <code>summary.json</code> 和总览 HTML。</div>
+    </div>
+
+    <h3>伪代码</h3>
+    <pre><code>def run_matrix(config):
+    instances = config["instances"]
+    cases = config["cases"]
+    concurrency = config.get("concurrency", 1)
+
+    with ThreadPoolExecutor(max_workers=concurrency) as executor:
+        futures = [
+            executor.submit(run_instance_suite, instance, cases, config)
+            for instance in instances
+        ]
+
+        results = []
+        for future in as_completed(futures):
+            results.extend(future.result())
+
+    write_summary(results)
+    write_index_html(results)</code></pre>
+
+    <h3>单实例执行流程</h3>
+    <pre><code>def run_instance_suite(instance, cases, config):
+    ensure_instance(instance)
+    launch(instance)
+    serial = wait_adb_ready(instance)
+    adb_install_r(serial, config["apk"])
+    activity = resolve_launch_activity(serial, config["package"])
+
+    restart_app_per_case = config.get("restart_app_per_case", True)
+    results = []
+    for case in cases:
+        started_at = now()
+        try:
+            if restart_app_per_case:
+                force_stop_app(serial, config["package"])
+
+            start_activity(serial, config["package"], activity)
+            wait_poco_ready(serial)
+            result = run_airtest_case(case, serial, instance)
+        except Exception as error:
+            result = CaseResult(
+                instance=instance["name"],
+                case=case_name(case),
+                status="failed",
+                stage=current_stage(),
+                error=str(error),
+                duration_seconds=elapsed_since(started_at),
+            )
+
+        results.append(result)
+
+    quit_instance(instance)
+    return results</code></pre>
+
+    <div class="note">
+      默认建议 <code>restart_app_per_case: true</code>。普通 UI 验收 case 应互相独立，避免隐式依赖；只有明确要验证连续流程或跨场景状态传递时，才考虑关闭该选项。
+    </div>
+
+    <h3>App 重启语义</h3>
+    <p><code>restart_app_per_case</code> 默认表示每个 case 前执行一次轻量重启：</p>
+    <pre><code>adb shell cmd package resolve-activity --brief &lt;apk package&gt;
+adb shell am force-stop &lt;apk package&gt;
+adb shell am start -n &lt;apk package&gt;/&lt;launchable activity&gt;
+wait_poco_ready()</code></pre>
+    <p>默认不执行 <code>pm clear</code>，避免清除权限、存档、设置和其他测试前置状态。后续如果确实需要更强隔离，可以另行增加 <code>reset_app_data_per_case</code>，但第一版不纳入默认路径。</p>
+
+    <h3>失败策略</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>失败位置</th>
+          <th>处理方式</th>
+          <th>原因</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>实例创建、启动、ADB ready、APK 安装、App 首次启动</td>
+          <td>中止当前实例任务，记录实例级失败。</td>
+          <td>这些属于环境阶段失败，后续 case 大概率无法执行。</td>
+        </tr>
+        <tr>
+          <td>单个 case 执行失败、断言失败、报告生成失败</td>
+          <td>记录该 case 失败，并继续执行后续 case。</td>
+          <td>case 之间默认通过重启 App 做状态隔离，一个 case 不应污染整个矩阵。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>报告目录设计</h2>
+    <p>多实例后，报告目录应该按运行批次、实例和 case 分层。</p>
+    <pre><code>runs/
+  20260519_213000/
+    summary.json
+    index.html
+    spark_720x1280/
+      logs/
+        smoke_game_ui/
+        pause_menu/
+      reports/
+        smoke_game_ui.html
+        pause_menu.html
+    spark_1080x1920/
+      logs/
+      reports/
+    spark_1080x2400/
+      logs/
+      reports/</code></pre>
+
+    <h3>summary.json 示例</h3>
+    <pre><code>{
+  "started_at": "2026-05-19 21:30:00",
+  "concurrency": 2,
+  "results": [
+    {
+      "instance": "spark_720x1280",
+      "case": "smoke_game_ui",
+      "status": "passed",
+      "stage": "completed",
+      "report": "spark_720x1280/reports/smoke_game_ui.html",
+      "log_dir": "spark_720x1280/logs/smoke_game_ui",
+      "duration_seconds": 18.4
+    },
+    {
+      "instance": "spark_1080x1920",
+      "case": "pause_menu",
+      "status": "failed",
+      "stage": "airtest_run",
+      "report": "spark_1080x1920/reports/pause_menu.html",
+      "log_dir": "spark_1080x1920/logs/pause_menu",
+      "error": "Expected node to appear: ResumeButton"
+    }
+  ]
+}</code></pre>
+  </section>
+
+  <section>
+    <h2>实现拆分建议</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>模块</th>
+          <th>职责</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>run.py</code></td>
+          <td>入口，解析配置，创建运行目录，调度矩阵执行。</td>
+        </tr>
+        <tr>
+          <td><code>runner/ldplayer.py</code></td>
+          <td>封装雷电实例创建、修改、启动、关闭和 ADB 命令。</td>
+        </tr>
+        <tr>
+          <td><code>runner/airtest_cli.py</code></td>
+          <td>封装 <code>airtest run</code> 和 <code>airtest report</code>。</td>
+        </tr>
+        <tr>
+          <td><code>runner/matrix.py</code></td>
+          <td>新增模块，负责单实例 suite、多实例串行执行、实例级并发调度和结果收集。</td>
+        </tr>
+        <tr>
+          <td><code>runner/report.py</code></td>
+          <td>新增模块，负责写 <code>summary.json</code> 和总览 HTML。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>迭代计划</h2>
+    <ol>
+      <li>把配置从 <code>instance</code> 升级为 <code>instances</code>，不保留旧配置兼容逻辑。</li>
+      <li>新增 <code>concurrency</code>，默认值为 <code>1</code>。</li>
+      <li>新增配置校验，关键字段、关键路径和空列表在执行前 fast-fail。</li>
+      <li>抽出 <code>run_instance_suite</code>，先保持单实例行为不变。</li>
+      <li>调整报告目录为实例分层，先消除未来并发下的路径冲突。</li>
+      <li>让 <code>AirtestCli.run_case</code> 返回结构化 case 结果。</li>
+      <li>串行跑多个实例，验证矩阵语义和报告目录。</li>
+      <li>生成 <code>summary.json</code>。</li>
+      <li>生成总览 <code>index.html</code>。</li>
+      <li>最后接入 <code>ThreadPoolExecutor</code>，实现实例级并发。</li>
+    </ol>
+
+    <div class="note">
+      建议先交付 V1：多实例串行、每 case 重启、实例分层报告和 <code>summary.json</code>。V1 稳定后再打开并发，这样并发只改变外层调度，不改变 case 执行语义。
+    </div>
+  </section>
+
+</main>
+</body>
+</html>

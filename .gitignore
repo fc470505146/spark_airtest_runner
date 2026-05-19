@@ -1,0 +1,14 @@
+.venv/
+.venv-airtest/
+__pycache__/
+*.pyc
+
+# Local machine config
+configs/*.local.json
+configs/*.local.yaml
+
+# Runtime outputs
+runs/
+logs/
+reports/
+**/__pycache__/
