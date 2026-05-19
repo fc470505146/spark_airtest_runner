@@ -1,10 +1,12 @@
 # Spark Airtest Runner
 
-面向 Spark Unity Android 包的 Airtest/Poco 自动化测试执行器。
+面向个人 Unity 项目 [Spark](https://github.com/fc470505146/spark) 开发的批量自动化测试工具。它基于雷电模拟器实例、Airtest 和 Poco，把 Android 包安装、实例启动、用例执行、日志采集和报告生成串成一条可重复执行的端到端验收链路。
+
+工具支持多雷电实例同时运行，适合用来批量检查不同分辨率、不同屏幕比例下的 UI 兼容性，也可以承载主流程冒烟、暂停菜单、触控模式切换、结算流程等黑盒 UI 回归用例。虽然当前用例服务于 Spark，但 runner 本身不绑定具体游戏逻辑；只要目标 Android 包能通过 ADB 启动并接入 Poco，替换配置里的 APK、包名、实例矩阵和 `.air` 用例后，就可以复用于其他 Unity Android 项目的自动化验收。
 
 ![自动跑测预览](docs/assets/自动跑测预览.gif)
 
-它负责把端到端测试环境拉起来：
+它负责端到端拉起环境并执行测试：
 
 ```text
 雷电实例创建/复用
