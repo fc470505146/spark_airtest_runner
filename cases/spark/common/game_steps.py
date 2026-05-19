@@ -28,12 +28,8 @@ def assert_game_scene_ready(poco):
 
 
 def open_pause_menu(poco):
-    click_node_and_wait(
-        poco,
-        click_node_name="SettingButton",
-        expected_node_name="ResumeButton",
-        click_timeout=5,
-        verify_timeout=5,
-    )
+    setting_button = assert_node_exists(poco, "SettingButton", timeout=5)
+    setting_button.click([0.95, 0.05])
+    assert_node_exists(poco, "ResumeButton", timeout=5)
     assert_node_exists(poco, "PausedUI", timeout=5)
     snapshot(msg="Pause menu is visible")

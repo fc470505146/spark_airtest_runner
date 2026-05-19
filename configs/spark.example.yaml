@@ -1,17 +1,55 @@
 ldconsole: C:\leidian\LDPlayer9\ldconsole.exe
-apk: C:\Users\fc470\projects\spark_builds\android\spark-poco-test.apk
+apk: C:\Users\fc470\projects\spark_builds\android\spark-poco.apk
 package: com.fc470.spark
-concurrency: 1
+concurrency: 4
 restart_app_per_case: true
 
 instances:
-  - name: spark_airtest_720x1280
+  # 手机：基础 16:9 竖屏
+  - name: spark_phone_720x1280
     resolution: 720,1280,320
     cpu: 2
     memory: 2048
+  - name: spark_phone_1080x1920
+    resolution: 1080,1920,420
+    cpu: 2
+    memory: 2048
+
+  # # 手机：长屏机型，覆盖 20:9 / 接近 20:9 的常见比例
+  - name: spark_phone_720x1600
+    resolution: 720,1600,320
+    cpu: 2
+    memory: 2048
+  - name: spark_phone_1080x2400
+    resolution: 1080,2400,440
+    cpu: 2
+    memory: 2048
+
+  # # 平板：竖屏与横屏
+  # - name: spark_tablet_1200x1920
+  #   resolution: 1200,1920,320
+  #   cpu: 2
+  #   memory: 3072
+  # - name: spark_tablet_1920x1200
+  #   resolution: 1920,1200,320
+  #   cpu: 2
+  #   memory: 3072
+
+  # # 桌面比例：用于覆盖 WebGL/PC 常见横屏布局
+  # - name: spark_desktop_1920x1080
+  #   resolution: 1920,1080,280
+  #   cpu: 4
+  #   memory: 4096
+  # - name: spark_desktop_2560x1440
+  #   resolution: 2560,1440,320
+  #   cpu: 4
+  #   memory: 4096
 
 cases:
-  - cases\spark\smoke_game_ui.air
-  - cases\spark\pause_menu.air
+  # - cases\spark\smoke_game_ui.air
+  # - cases\spark\pause_menu.air
+  # - cases\spark\hud_visibility.air
+  # - cases\spark\force_success.air
+  # - cases\spark\force_fail.air
   - cases\spark\touch_mode.air
-  - cases\spark\hud_visibility.air
+  - cases\spark\smoke_game_all.air

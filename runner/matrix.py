@@ -40,6 +40,8 @@ def run_instance_suite(instance, cases, config, run_dir, ldplayer, airtest, keep
         ldplayer.launch(instance_name)
         stage = "wait_instance_running"
         ldplayer.wait_instance_running(instance_name)
+        stage = "sort_windows"
+        ldplayer.sort_windows()
         stage = "wait_adb_ready"
         serial = ldplayer.wait_adb_ready(instance_name)
         print(f"{instance_name} ADB serial: {serial}")

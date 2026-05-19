@@ -51,6 +51,9 @@ class LDPlayer:
     def launch(self, name):
         self.run("launch", "--name", name, timeout=180)
 
+    def sort_windows(self):
+        self.run("sortWnd", timeout=60, check=False)
+
     def quit(self, name):
         self.run("quit", "--name", name, timeout=60, check=False)
 
